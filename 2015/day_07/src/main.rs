@@ -1,5 +1,10 @@
 // Solution for https://adventofcode.com/2015/day/7
 
+// Using anyhow for errors
+use anyhow::Result;
+// Using HashMap to store the wires and their gates
+use std::collections::HashMap;
+
 // region: Instruction Input
 const INSTRUCTION_INPUT: &str = "af AND ah -> ai
 NOT lk -> ll
@@ -342,7 +347,194 @@ k AND m -> n
 as RSHIFT 2 -> at";
 // endregion: Instruction Input
 
+// Create enum for the operation types
+#[derive(Clone)]
+enum Operation{
+    And,
+    Or,
+    Not,
+    LShift{shift_amount: u16},
+    RShift{shift_amount: u16},
+    Pass
+}
 
-fn main() {
-    println!("Hello, world!");
+// Create a struct to hold instructions for a wire
+#[derive(Clone)]
+struct Instruction{
+    inputs: Vec<String>,
+    operation: Operation
+}
+
+impl Instruction{
+    fn new(inputs: Vec<String>, operation: Operation) -> Self{
+        Instruction { inputs, operation }
+    }
+}
+
+
+fn main() -> Result<()>{
+    // Create a HashMap for wires and instructions
+    let mut instructions: HashMap<&str, Instruction> = HashMap::new();
+
+    // Loop over the instructions
+    for instruction in INSTRUCTION_INPUT.lines(){
+        // Split the instruction
+        let split_instruction: Vec<&str> = instruction.split(' ').collect();
+
+        // Get the operation and insert into the instructions
+        let operation: &str = if split_instruction[0] == "NOT"{
+            "NOT"
+        } else{
+            split_instruction[1]
+        };
+
+        match operation{
+            "AND" =>{
+                instructions.insert(
+                    split_instruction[split_instruction.len() - 1],
+                    Instruction::new(
+                        vec![split_instruction[0].to_string(), split_instruction[2].to_string()],
+                        Operation::And
+                    )
+                );
+            },
+            "OR" => {
+                instructions.insert(
+                    split_instruction[split_instruction.len() - 1],
+                    Instruction::new(
+                        vec![split_instruction[0].to_string(), split_instruction[2].to_string()],
+                        Operation::Or
+                    )
+                );
+            },
+            "NOT" => {
+                instructions.insert(
+                    split_instruction[split_instruction.len() - 1],
+                    Instruction::new(
+                        vec![split_instruction[1].to_string()],
+                        Operation::Not
+                    )
+                );
+            },
+            "LSHIFT" => {
+                instructions.insert(
+                    split_instruction[split_instruction.len() - 1],
+                    Instruction::new(
+                        vec![split_instruction[0].to_string()],
+                        Operation::LShift { shift_amount: split_instruction[2].parse()? }
+                    )
+                );
+            },
+            "RSHIFT" => {
+                instructions.insert(
+                    split_instruction[split_instruction.len() - 1],
+                    Instruction::new(
+                        vec![split_instruction[0].to_string()],
+                        Operation::RShift { shift_amount: split_instruction[2].parse()? }
+                    )
+                );
+            },
+            _ => {
+                instructions.insert(
+                    split_instruction[split_instruction.len() - 1],
+                    Instruction::new(
+                        vec![split_instruction[0].to_string()],
+                        Operation::Pass
+                    )
+                );
+            }
+        }
+    }
+
+    // Send the instructions to run_circuit to get the value of a
+    println!("The value of a in step one is {}", run_circuit(&mut instructions.clone(), false)?);
+
+    // Send the instructions to run_circuit to get the new value of a
+    println!("The value of a in step two is {}", run_circuit(&mut instructions, true)?);
+
+    Ok(())
+}
+
+fn run_circuit(instructions: &mut HashMap<&str, Instruction>, step_two: bool) -> Result<u16>{
+    // Create a hashmap to store the wires and their final value
+    let mut wires: HashMap<&str, u16> = HashMap::new();
+
+    // If step two, change the value of b
+    if step_two{
+        if let Some(entry) = instructions.get_mut("b"){
+            entry.operation = Operation::Pass;
+            entry.inputs[0] = String::from("956");
+        }
+    }
+
+    // Outer loop to keep going until there's no instructions left
+    loop{
+        for instruction_pair in instructions.clone(){
+            match instruction_pair.1.operation{
+                Operation::And => {
+                    // Check if the first input is a number
+                    if let Ok(value) = instruction_pair.1.inputs[0].parse::<u16>(){
+                        // Check if the second input is in the wires
+                        if let Some(wire) = wires.get(instruction_pair.1.inputs[1].as_str()){
+                            wires.insert(instruction_pair.0, value & *wire);
+                            instructions.remove(instruction_pair.0);
+                        }
+                    } else if let Some(wire_one) = wires.get(instruction_pair.1.inputs[0].as_str()){
+                        if let Some(wire_two) = wires.get(instruction_pair.1.inputs[1].as_str()){
+                            wires.insert(instruction_pair.0, *wire_one & *wire_two);
+                            instructions.remove(instruction_pair.0);
+                        }
+                    }
+                },
+                Operation::Or => {
+                    // Check if both wires have values
+                    if let Some(wire_one) = wires.get(instruction_pair.1.inputs[0].as_str()){
+                        if let Some(wire_two) = wires.get(instruction_pair.1.inputs[1].as_str()){
+                            wires.insert(instruction_pair.0, *wire_one | *wire_two);
+                            instructions.remove(instruction_pair.0);
+                        }
+                    }
+                },
+                Operation::Not => {
+                    // Check if the wire has a value
+                    if let Some(wire) = wires.get(instruction_pair.1.inputs[0].as_str()){
+                        wires.insert(instruction_pair.0, !*wire);
+                        instructions.remove(instruction_pair.0);
+                    }
+                },
+                Operation::LShift { shift_amount } => {
+                    // Check if the wire has a value
+                    if let Some(wire) = wires.get(instruction_pair.1.inputs[0].as_str()){
+                        wires.insert(instruction_pair.0, *wire << shift_amount);
+                        instructions.remove(instruction_pair.0);
+                    }
+                },
+                Operation::RShift { shift_amount } => {
+                    // Check if the wire has a value
+                    if let Some(wire) = wires.get(instruction_pair.1.inputs[0].as_str()){
+                        wires.insert(instruction_pair.0, *wire >> shift_amount);
+                        instructions.remove(instruction_pair.0);
+                    }
+                },
+                Operation::Pass => {
+                    // Check if the value is a number
+                    if let Ok(value) = instruction_pair.1.inputs[0].parse::<u16>(){
+                        wires.insert(instruction_pair.0, value);
+                        instructions.remove(instruction_pair.0);
+                    } else if let Some(wire) = wires.get(instruction_pair.1.inputs[0].as_str()){
+                        wires.insert(instruction_pair.0, *wire);
+                        instructions.remove(instruction_pair.0);
+                    }
+                }
+            }
+        }
+
+        // Break the loop if we're out of instructions
+        if instructions.is_empty(){
+            break;
+        }
+    }
+
+    // Return the value of a
+    Ok(wires["a"])
 }
